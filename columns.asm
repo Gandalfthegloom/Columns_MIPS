@@ -32,7 +32,7 @@ gem_palette:
 gem_pal_len:    
     .word 6
 
-bg_pallete
+    .include "sprites.asm"
 
 ##############################################################################
 # Mutable Data
@@ -46,15 +46,30 @@ bg_pallete
 
     # Run the game.
 main:
-    # Initialize the game
-    la   $t0, palette     # address of palette[0]
-    lw   $t1, 0($t0)      # $t1 = first color (red)
-    lw   $t2, 4($t0)      # $t2 = second color (orange)
-    lw   $t3, 8($t0)      # etc.
-    lw   $t4, 12($t0)      
-    lw   $t5, 16($t0)      
-    lw   $t6, 20($t0)      
-    
+    # Initialize the game   
+
+    lw   $t0, ADDR_DSPL
+    jal draw_background    
+    j exit
+
+draw_background:
+    la   $t1, background_sprite     # $t1 = address of sprite data
+    li   $t2, 512            # 16 * 16 pixels
+
+    background_loop:
+        beq  $t2, $zero, draw_done
+
+        lw   $t3, 0($t1)         # load next pixel from sprite
+        sw   $t3, 0($t0)         # store to display
+
+        addiu $t1, $t1, 4        # advance sprite pointer
+        addiu $t0, $t0, 4        # advance display pointer
+        addiu $t2, $t2, -1       # decrement pixel counter]
+
+        j    background_loop
+
+    draw_done:
+        jr   $ra                 # return to caller
 
 game_loop:
     # 1a. Check if key has been pressed
