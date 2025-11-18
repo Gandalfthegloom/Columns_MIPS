@@ -29,7 +29,7 @@ gem_palette:
     .word 0xA31621, 0xED7D3A, 0xDCED31, 0x0CCE6B, 0x4E8098, 0x503047
 gem_pal_len:    
     .word 6
-bg_pallette:
+bg_palette:
     .word 0x00000000
 .include "sprites.asm"
 
@@ -46,7 +46,7 @@ main:
     lw   $t0, ADDR_DSPL
     jal draw_background
 
-    # Block Generation
+    # Block Generation (this function loads t0 and t1-t3 as position and colors)
     li $a0, 152 # top tile position
     jal block_generate 
 
@@ -122,30 +122,39 @@ game_loop:
     beq $t5, 0x77, pressed_key_W
     beq $t5, 0x61, pressed_key_A
     beq $t5, 0x73, pressed_key_S
-    beq $t5, 0x64, pressed_key_D
+    beq $t5, 0x64, pressed_key_D # after this like, t5 is free
     j END_IF0
     
     # 2a. Check for collisions
     col_bottom: # Check Bottom
+        move $t6, $a1
+        addi $t6, $t6, 384 # check bottom of the bottom part of block
+        lw $t5, ADDR_DSPL
+        add $t5, $t5, $t6
+        lw $t7, bg_palette
+        lw $t6, 0($t5)
+        bne $t7, $t6, END_IF0
+        jr $ra
+        
     col_left: # Check Left, a1 is address of top gem i.e. t0
         move $t6, $a1
-        addi $t6, $t6, -4
-        lw $t7, bg_pallette
-        beq $t6, $t7, END_IF0
+        addi $t6, $t6, 252 # check left of the bottom part of block
+        lw $t5, ADDR_DSPL
+        add $t5, $t5, $t6
+        lw $t7, bg_palette
+        lw $t6, 0($t5)
+        bne $t7, $t6, END_IF0
+        jr $ra
         
     col_right: # Check Right
         move $t6, $a1
-        addi $t6, $t6, 4
-        lw $t7, bg_pallette
-        beq $t6, $t7, END_IF0
-
-        
-    
-    
-    
-    # 2b. Update locations (capsules)
-
-    
+        addi $t6, $t6, 260 # check right of the bottom part of block
+        lw $t5, ADDR_DSPL
+        add $t5, $t5, $t6
+        lw $t7, bg_palette
+        lw $t6, 0($t5)
+        bne $t7, $t6, END_IF0
+        jr $ra
     
     # 3. Draw the screen
     pressed_key_W:
@@ -172,7 +181,7 @@ game_loop:
         andi $t5, $t0, 124
         beq $t5, 0, END_IF0
 
-        lw $a1, 0($t0)
+        move $a1, $t0
         jal col_left
         
         li $a0, -4
@@ -184,6 +193,9 @@ game_loop:
         # move down
         bge $t0, 1536, END_IF0
         
+        move $a1, $t0
+        jal col_bottom
+        
         li $a0, 128
         jal move_block
         
@@ -194,6 +206,9 @@ game_loop:
         andi $t5, $t0, 124
         bge $t5, 124, END_IF0
         
+        move $a1, $t0
+        jal col_right
+        
         li $a0, 4
         jal move_block
         
@@ -202,13 +217,32 @@ game_loop:
     END_IF0:
 	# 4. Sleep
 	lw $t8, DROP_TICK
-	addi $t9, $t9, 1
-	bne $t9, $t8, game_loop
-	li $t9, 0
-	bge $t0, 1536, game_loop
+	addi $t9, $t9, 1 # add tick
+	bne $t9, $t8, game_loop # while not drop tick, loop
+	li $t9, 0 # reset timer
+	bge $t0, 1536, landed
+	
+	move $t6, $t0
+    addi $t6, $t6, 384 # check left of the bottom part of block
+    lw $t5, ADDR_DSPL
+    add $t5, $t5, $t6
+    lw $t7, bg_palette
+    lw $t6, 0($t5)
+    bne $t7, $t6, landed
+	
     li $a0, 128
-    jal move_block
+    jal move_block # automatically moves down the block
+    j game_loop
 
+    landed:
+        # Block Generation (this function loads t0 and t1-t3 as position and colors)
+        li $a0, 152 # top tile position
+        jal block_generate 
+    
+        li $a0, 0
+        jal move_block
+        li $t9, 0 # timer
+    
     # 5. Go back to Step 1
     j game_loop
     
