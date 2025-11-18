@@ -31,6 +31,9 @@ gem_palette:
     .word 0xA31621, 0xED7D3A, 0xDCED31, 0x0CCE6B, 0x4E8098, 0x503047
 gem_pal_len:    
     .word 6
+bg_palette:
+    .word 0x00000000
+.include "sprites.asm"
 
 ##############################################################################
 # Code
@@ -40,41 +43,74 @@ gem_pal_len:
 
 main:
     # Initialize the game
-    li $t0, 0 # top tile position
-    
-    li $v0, 42
-    li $a0, 0
-    li $a1, 6
-    syscall
-    move $t5, $a0
-    sll $t5, $t5, 2
-    la $t4, gem_palette
-    add $t4, $t4, $t5
-    lw $t1, 0($t4) # color of top tile
-    
-    li $v0, 42
-    li $a0, 0
-    li $a1, 6
-    syscall
-    move $t5, $a0
-    sll $t5, $t5, 2
-    la $t4, gem_palette
-    add $t4, $t4, $t5
-    lw $t2, 0($t4) # color of middle tile
-    
-    li $v0, 42
-    li $a0, 0
-    li $a1, 6
-    syscall
-    move $t5, $a0
-    sll $t5, $t5, 2
-    la $t4, gem_palette
-    add $t4, $t4, $t5
-    lw $t3, 0($t4) # color of bottom tile
-    
+
+    # Background loading
+    lw   $t0, ADDR_DSPL
+    jal draw_background
+
+    # Block Generation (this function loads t0 and t1-t3 as position and colors)
+    li $a0, 152 # top tile position
+    jal block_generate 
+
     li $a0, 0
     jal move_block
     li $t9, 0 # timer
+
+    j game_loop
+
+
+draw_background:
+    la   $t1, background_sprite     # $t1 = address of sprite data
+    li   $t2, 512            # 16 * 16 pixels
+
+    background_loop:
+        beq  $t2, $zero, draw_done
+
+        lw   $t3, 0($t1)         # load next pixel from sprite
+        sw   $t3, 0($t0)         # store to display
+
+        addiu $t1, $t1, 4        # advance sprite pointer
+        addiu $t0, $t0, 4        # advance display pointer
+        addiu $t2, $t2, -1       # decrement pixel counter]
+
+        j    background_loop
+
+    draw_done:
+        jr   $ra                 # return to caller
+
+block_generate: # Param: $a0 = top tile position
+    addi $sp, $sp, -4              # make space on stack
+    sw   $ra, 0($sp)               # save caller's return address
+    
+    move $t0, $a0
+    jal gem_generate
+    move $t1, $a2
+    jal gem_generate
+    move $t2, $a2
+    jal gem_generate
+    move $t3, $a2
+
+    lw   $ra, 0($sp)               # restore return address for main
+    addi $sp, $sp, 4               # pop stack
+
+    jr $ra
+    
+    # Parameters: gem_generate($a2 = tile address to be generated)
+    gem_generate:
+    
+        li $v0, 42
+        li $a0, 0
+        li $a1, 6
+        syscall
+        
+        move $t5, $a0
+        sll $t5, $t5, 2
+        la $t4, gem_palette
+        add $t4, $t4, $t5
+        lw $a2, 0($t4) # color of top tile
+    
+        jr $ra
+  
     
 game_loop:
     # 1a. Check if key has been pressed
@@ -88,13 +124,45 @@ game_loop:
     beq $t5, 0x77, pressed_key_W
     beq $t5, 0x61, pressed_key_A
     beq $t5, 0x73, pressed_key_S
-    beq $t5, 0x64, pressed_key_D
+    beq $t5, 0x64, pressed_key_D # after this like, t5 is free
     j END_IF0
-    # 2a. Check for collisions
     
-    # 2b. Update locations (capsules)
+    # 2a. Check for collisions
+    col_bottom: # Check Bottom
+        move $t6, $a1
+        addi $t6, $t6, 384 # check bottom of the bottom part of block
+        lw $t5, ADDR_DSPL
+        add $t5, $t5, $t6
+        lw $t7, bg_palette
+        lw $t6, 0($t5)
+        bne $t7, $t6, END_IF0
+        jr $ra
+        
+    col_left: # Check Left, a1 is address of top gem i.e. t0
+        move $t6, $a1
+        addi $t6, $t6, 252 # check left of the bottom part of block
+        lw $t5, ADDR_DSPL
+        add $t5, $t5, $t6
+        lw $t7, bg_palette
+        lw $t6, 0($t5)
+        bne $t7, $t6, END_IF0
+        jr $ra
+        
+    col_right: # Check Right
+        move $t6, $a1
+        addi $t6, $t6, 260 # check right of the bottom part of block
+        lw $t5, ADDR_DSPL
+        add $t5, $t5, $t6
+        lw $t7, bg_palette
+        lw $t6, 0($t5)
+        bne $t7, $t6, END_IF0
+        jr $ra
+    
     # 3. Draw the screen
     pressed_key_W:
+        addi $sp, $sp, -4              # make space on stack
+        sw   $ra, 0($sp)               # save c
+        
         # scroll colors
         addi $sp, $sp, -4
         sw $t3, 0($sp)
@@ -107,10 +175,16 @@ game_loop:
         jal move_block
         j END_IF0
         
+        lw   $ra, 0($sp)               # restore return address for main
+        addi $sp, $sp, 4               # pop stack
+        
     pressed_key_A:
         # move left
         andi $t5, $t0, 124
         beq $t5, 0, END_IF0
+
+        move $a1, $t0
+        jal col_left
         
         li $a0, -4
         jal move_block
@@ -120,6 +194,9 @@ game_loop:
     pressed_key_S:
         # move down
         bge $t0, 1536, END_IF0
+        
+        move $a1, $t0
+        jal col_bottom
         
         li $a0, 128
         jal move_block
@@ -131,6 +208,9 @@ game_loop:
         andi $t5, $t0, 124
         bge $t5, 124, END_IF0
         
+        move $a1, $t0
+        jal col_right
+        
         li $a0, 4
         jal move_block
         
@@ -139,15 +219,6 @@ game_loop:
     END_IF0:
 	# 4. Sleep
 	lw $t8, DROP_TICK
-	addi $t9, $t9, 1
-	bne $t9, $t8, game_loop
-	li $t9, 0
-	bge $t0, 1536, game_loop
-    li $a0, 128
-    jal move_block
-
-<<<<<<< Updated upstream
-=======
     landed:
     # t0-t8 is free to use
         addi $sp, $sp, -4
@@ -165,6 +236,24 @@ game_loop:
         lw $ra, 0($sp)
         addi $sp, $sp, 4
             
+	addi $t9, $t9, 1 # add tick
+	bne $t9, $t8, game_loop # while not drop tick, loop
+	li $t9, 0 # reset timer
+	bge $t0, 1536, landed
+	
+	move $t6, $t0
+    addi $t6, $t6, 384 # check left of the bottom part of block
+    lw $t5, ADDR_DSPL
+    add $t5, $t5, $t6
+    lw $t7, bg_palette
+    lw $t6, 0($t5)
+    bne $t7, $t6, landed
+	
+    li $a0, 128
+    jal move_block # automatically moves down the block
+    j game_loop
+
+    landed:
         # Block Generation (this function loads t0 and t1-t3 as position and colors)
         li $a0, 152 # top tile position
         jal block_generate 
@@ -173,7 +262,6 @@ game_loop:
         jal move_block
         li $t9, 0 # timer
     
->>>>>>> Stashed changes
     # 5. Go back to Step 1
     j game_loop
     
@@ -465,6 +553,9 @@ gravity:
     lw $ra, 0($sp)
     addi $sp, $sp, 4
     jr $ra
+    
+    # 5. Go back to Step 1
+    j game_loop
     
 move_block:
     lw $t4, ADDR_DSPL
