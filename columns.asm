@@ -219,23 +219,6 @@ game_loop:
     END_IF0:
 	# 4. Sleep
 	lw $t8, DROP_TICK
-    landed:
-    # t0-t8 is free to use
-        addi $sp, $sp, -4
-        sw $ra, 0($sp)
-        
-        # Loop: mark matches → remove → gravity → check if more matches
-        match_gravity_loop:
-            jal mark_match      # Mark all horizontal matches
-            jal remove_match    # Remove marked tiles, $v0 = 1 if any removed
-            beq $v0, $zero, done_matching  # If nothing removed, we're done
-            jal gravity         # Apply gravity
-            j match_gravity_loop  # Check for new matches
-        
-        done_matching:
-        lw $ra, 0($sp)
-        addi $sp, $sp, 4
-            
 	addi $t9, $t9, 1 # add tick
 	bne $t9, $t8, game_loop # while not drop tick, loop
 	li $t9, 0 # reset timer
@@ -254,6 +237,22 @@ game_loop:
     j game_loop
 
     landed:
+    # t0-t8 is free to use
+        addi $sp, $sp, -4
+        sw $ra, 0($sp)
+        
+        # Loop: mark matches → remove → gravity → check if more matches
+        match_gravity_loop:
+            jal mark_match      # Mark all horizontal matches
+            jal remove_match    # Remove marked tiles, $v0 = 1 if any removed
+            beq $v0, $zero, done_matching  # If nothing removed, we're done
+            jal gravity         # Apply gravity
+            j match_gravity_loop  # Check for new matches
+        
+        done_matching:
+        lw $ra, 0($sp)
+        addi $sp, $sp, 4
+            
         # Block Generation (this function loads t0 and t1-t3 as position and colors)
         li $a0, 152 # top tile position
         jal block_generate 
